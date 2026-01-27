@@ -1,0 +1,31 @@
+# Ignore everything inside data/
+data/*
+results/*
+src/training/wandb/*
+*/__pycache__/*
+
+# keep folders of datasets
+!data/.gitkeep
+!data/arasaac/.gitkeep
+!data/lds/.gitkeep
+!data/icon645/.gitkeep
+!data/openmoji/.gitkeep
+!data/quickdraw/.gitkeep
+!data/the_noun_project/.gitkeep
+
+
+venv/*
+
+# Wandb
+wandb/
+
+#log, png and error files
+*.log
+*.out
+*.err
+*.png
+src/dataset_creation/arasaac/__pycache__/scrape.cpython-310.pyc
+src/training/wandb/latest-run
+src/training/wandb/latest-run
+src/evaluation/__pycache__/easyread_metrics.cpython-310.pyc
+src/evaluation/draft/results/
