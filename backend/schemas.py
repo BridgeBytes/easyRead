@@ -1,10 +1,6 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
+from typing import List, Optional
 from enum import Enum
-
-class SymbolLibrary(str, Enum):
-    OPEN_MOJI = "openmoji"
-    ARASAAC = "arasaac"
-    LDS = "lds"
 
 
 class SimplifyTextRequest(BaseModel):
@@ -15,28 +11,46 @@ class SimplifyTextRequest(BaseModel):
     unalterable_terms_text: str | None = Field(
         "unalterable_terms_text", description="Optional comma-separated terms that should not be altered during simplification."
     )
+
+class SimplifiedSentence(BaseModel):
+    sentence: str
+    image_prompt: str
+
+class SimplifiedText(BaseModel):
+    title: str
+    simplified_sentences: List[SimplifiedSentence]
+
+class Validation(BaseModel):
+    missing_info: str
+    extra_info: str
+    other_feedback: str
+
+class RevisedSentence(BaseModel):
+    sentence: str
+    image_prompt: str
+    highlighted: bool
+
+class Revision(BaseModel):
+    revised_sentences: List[RevisedSentence]
+
+
+class SimplifiedTextResponse(BaseModel):
+    simplified_text: SimplifiedText
+    validation: Validation
+    revision: Revision
+
+class SymbolLibrary(str, Enum):
+    OPEN_MOJI = "openmoji"
+    ARASAAC = "arasaac"
+    LDS = "lds"
+
+
+
+class GenerateIconRequest(BaseModel):
     num_of_images: int = Field(default=1, description="Number of images to generate for the simplified text.")
     symbol_library: SymbolLibrary = Field(
         SymbolLibrary.OPEN_MOJI, description="The symbol library to use for generating icons."
     )
-
-    @property
-    def sentences(self) -> list[str]:
-        return [s.strip() for s in self.text.split('.') if s.strip()]
-
-
-class Sentences(BaseModel):
-    sentence: str = Field(description="The simplified sentence.")
-    image_prompt: str = Field(description="The prompt used for generating the image/icon.")
-
-
-class SimplifyTextResponse(BaseModel):
-    title: str | None = Field(description="The title of the simplified text.")
-    sentences: list[Sentences] | None = Field(description="List of simplified sentences with image prompts.")
-
-
-class GenerateIconRequest(BaseModel):
-    pass
 
 
 class GenerateIconsResponse(BaseModel):

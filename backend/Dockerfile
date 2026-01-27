@@ -17,5 +17,5 @@ COPY ./requirements.txt .
 
 RUN pip install -r ./requirements.txt
 
-CMD ["uv", "run", "uvicorn","api:api","--port","8000","--host","0.0.0.0"]
+CMD ["uv", "run", "uvicorn","api:api","--port","8000","--host","0.0.0.0", "--reload"]
 
