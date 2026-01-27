@@ -58,6 +58,6 @@ class Controller:
 
         return response_data
 
-    def generate_icons(self, sentences: list[dict]) -> list[bytes]:
+    def generate_icons(self, sentences: list[dict], request_id: str) -> list[bytes]:
         pass
 
