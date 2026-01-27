@@ -2,7 +2,7 @@ from minio import Minio
 import os
 
 BUCKET_NAME=os.getenv("MINIO_BUCKET_NAME", "easyread")
-MINIO_HOST=os.getenv("MINIO_HOST", "localhost")
+MINIO_HOST=os.getenv("MINIO_HOST", "minio")
 MINIO_PORT=os.getenv("MINIO_PORT", "9000")
 MINIO_ROOT_USER=os.getenv("MINIO_ROOT_USER", "easyread")
 MINIO_ROOT_PASSWORD=os.getenv("MINIO_ROOT_PASSWORD", "Us5l21N85KHD")

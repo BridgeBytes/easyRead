@@ -1,5 +1,29 @@
 name: EasyRead Services
 services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend.easyread
+    hostname: backend.easyread
+    ports:
+      - "8000:8000" # Expose backend service on port 8000
+    env_file:
+      - .env
+    depends_on:
+      - minio
+    volumes:
+      - ./backend:/backend
+    ## Attach GPU
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - easyread
   minio:
     image: quay.io/minio/minio:latest # Use the official MinIO image
     container_name: minio
@@ -20,8 +44,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-
+    networks:
+      - easyread
 
 volumes:
   minio_data:
 
+
+networks:
+  easyread:
+    driver: bridge

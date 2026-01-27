@@ -1,5 +1,8 @@
-torch
 pillow
 numpy
 diffusers==0.36.0
 peft==0.18.1
+uvicorn
+fastapi
+google-genai
+minio
