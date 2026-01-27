@@ -37,7 +37,7 @@ system_message: |
   - Ignore document metadata and noise introduced by the PDF to Markdown conversion
 
   # Output Format
-  Output only a valid JSON object following the template below. 
+  Output only a valid JSON object following the template below and do not wrap it in markdown code blocks.
   {
     "missing_info": "Detailed explanation of essential information from the original content that is absent from the sentences. Include specific examples, facts, or concepts that are missing. Categorize by importance if multiple items are missing. Leave blank if all key information is present.",
     "extra_info": "Detailed explanation of information in the sentences that contradicts, misrepresents, or is not supported by the original content. Include specific examples of inaccuracies or unsupported claims. Also note any information that, while not incorrect, adds unnecessary complexity or detail not present in the original. Leave blank if all information is accurate and appropriate.",

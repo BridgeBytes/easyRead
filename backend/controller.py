@@ -1,6 +1,7 @@
 from services.gemini import GeminiDriver
 from services.storage import StorageDriver
 from services.config import Config
+from services.icons import IconGenerator
 import json
 from logging import getLogger
 
@@ -13,6 +14,7 @@ class Controller:
         self.gemini = GeminiDriver()
         self.storage = StorageDriver()
         self.config = Config()
+        self.icon_generator = IconGenerator()
 
 
     def simplify_text(self, text: str) -> dict:
