@@ -29,3 +29,35 @@ src/training/wandb/latest-run
 src/training/wandb/latest-run
 src/evaluation/__pycache__/easyread_metrics.cpython-310.pyc
 src/evaluation/draft/results/
+
+node_modules
+clipart_images/
+chroma_db/
+image_references/
+media/
+resources/
+test_api_flow.py
+*.pyc
+__pycache__/
+.DS_Store
+.env
+venv/
+# SQLite not supported - PostgreSQL required
+# db.sqlite3
+images/*
+CLAUDE.md
+globalsymbols_images_test.csv
+globalsymbols_images.csv
+playground.md
+deployment_env/
+experiments/
+experiments/.env
+
+# Backup files
+*.backup
+*.bak
+*~
+*.swp
+*.swo
+.claude
+*.zip
