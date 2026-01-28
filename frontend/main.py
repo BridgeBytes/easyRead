@@ -5,6 +5,7 @@ A web interface for the EasyRead document simplification service.
 Converts complex text into Easy Read format with pictogram icons.
 """
 
+import logging
 import gradio as gr
 import tempfile
 
@@ -12,9 +13,16 @@ from utils.backend import BackendClient, RevisedSentence
 from utils.docx_export import export_to_docx_bytes
 from utils.markdown_export import export_to_markdown_bytes
 
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Initialize backend client
 client = BackendClient()
+logger.info(f"Backend client initialized with URL: {client.base_url}")
 
 # Global state storage
 state = {
@@ -28,7 +36,10 @@ state = {
 
 def simplify_text(text: str, context: str, unalterable_terms: str):
     """Send text to backend for simplification."""
+    logger.info(f"simplify_text called with text length: {len(text)}")
+
     if not text.strip():
+        logger.warning("Empty text received")
         return (
             gr.update(visible=True, value="Please enter some text to simplify."),
             gr.update(visible=False),  # review section
@@ -36,11 +47,13 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
         )
 
     try:
+        logger.info(f"Calling backend at {client.base_url}/sentence/simplify")
         response = client.simplify_text(
             text=text,
             custom_context=context if context.strip() else None,
             unalterable_terms=unalterable_terms if unalterable_terms.strip() else None,
         )
+        logger.info(f"Backend response received: title={response.title}")
 
         state["title"] = response.title
         state["revised_sentences"] = response.revised_sentences
@@ -71,6 +84,7 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
         )
 
     except Exception as e:
+        logger.error(f"Error in simplify_text: {type(e).__name__}: {e}", exc_info=True)
         error_msg = str(e).lower()
         if any(x in error_msg for x in ["503", "overload", "unavailable", "timeout", "connection", "error"]):
             user_message = "The AI service is temporarily unavailable. Please try again."
@@ -119,9 +133,11 @@ def update_sentences_from_table(table_data):
 
 def generate_icons(table_data):
     """Generate icons for approved sentences."""
+    logger.info("generate_icons called")
     update_sentences_from_table(table_data)
 
     if not state["revised_sentences"]:
+        logger.warning("No revised sentences in state")
         return (
             gr.update(visible=True, value="No sentences to generate icons for."),
             gr.update(visible=False),
@@ -132,7 +148,9 @@ def generate_icons(table_data):
         )
 
     try:
+        logger.info(f"Calling backend to generate icons for {len(state['revised_sentences'])} sentences")
         response = client.generate_icons(state["revised_sentences"])
+        logger.info(f"Icons generated: request_id={response.request_id}, count={len(response.icons)}")
         state["request_id"] = response.request_id
         state["icons"] = response.icons
         state["image_data"] = {}
@@ -182,7 +200,8 @@ def generate_icons(table_data):
             None,  # md download
         )
 
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error in generate_icons: {type(e).__name__}: {e}", exc_info=True)
         return (
             gr.update(visible=True, value="Failed to generate icons. Please try again."),
             gr.update(visible=False),
@@ -264,6 +283,7 @@ def reset_app():
         "",   # context
         "",   # terms
         gr.update(visible=False),  # error
+        gr.update(visible=False),  # loading
         gr.update(visible=False),  # review section
         gr.update(visible=False),  # results section
     )
@@ -360,6 +380,31 @@ custom_css = """
     border-radius: 8px;
     margin-bottom: 15px;
 }
+.loading-box {
+    background: #e8f4fd;
+    border: 1px solid #b3d9f7;
+    color: #0066cc;
+    padding: 16px;
+    border-radius: 8px;
+    margin: 15px 0;
+    text-align: center;
+    font-weight: 500;
+}
+.loading-box::before {
+    content: "";
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #0066cc;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 10px;
+    vertical-align: middle;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
 """
 
 # Build the Gradio interface
@@ -408,6 +453,9 @@ with gr.Blocks(
     # Error display
     error_box = gr.Markdown(visible=False, elem_classes=["error-box"])
 
+    # Loading indicator
+    loading_box = gr.Markdown(visible=False, elem_classes=["loading-box"])
+
     # Step 2: Review Section (appears after simplification)
     with gr.Group(visible=False, elem_classes=["section-box"]) as review_section:
         gr.Markdown("### Step 2: Review & Approve Sentences")
@@ -452,6 +500,9 @@ with gr.Blocks(
 
     # Event handlers
     simplify_btn.click(
+        fn=lambda: gr.update(visible=True, value="Simplifying your text... This may take a moment."),
+        outputs=[loading_box],
+    ).then(
         fn=simplify_text,
         inputs=[input_text, context_input, terms_input],
         outputs=[
@@ -462,9 +513,15 @@ with gr.Blocks(
             validation_display,
             sentences_table,
         ],
+    ).then(
+        fn=lambda: gr.update(visible=False),
+        outputs=[loading_box],
     )
 
     generate_btn.click(
+        fn=lambda: gr.update(visible=True, value="Generating icons... This may take a moment."),
+        outputs=[loading_box],
+    ).then(
         fn=generate_icons,
         inputs=[sentences_table],
         outputs=[
@@ -475,6 +532,9 @@ with gr.Blocks(
             docx_download,
             md_download,
         ],
+    ).then(
+        fn=lambda: gr.update(visible=False),
+        outputs=[loading_box],
     )
 
     docx_btn.click(
@@ -503,6 +563,7 @@ with gr.Blocks(
             context_input,
             terms_input,
             error_box,
+            loading_box,
             review_section,
             results_section,
         ],
