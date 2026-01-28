@@ -85,7 +85,7 @@ class Controller:
             image_path = os.path.join(request_dir, f"{safe_prompt}.png")
             image.save(image_path)
             logger.info(f"Saved icon for prompt '{prompt}' at '{image_path}'")
-            sentence['image_path'] = "/".join([request_id, f"{safe_prompt}.png"])
+            sentence['image_path'] = "/".join(["icons/",request_id, f"{safe_prompt}.png"])
 
         return {
             "request_id": request_id,

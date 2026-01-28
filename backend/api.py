@@ -1,7 +1,9 @@
 from logging import getLogger
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from schemas import SimplifyTextRequest, SimplifiedTextResponse, GenerateIconRequest ,GenerateIconsResponse
 from controller import Controller
+from services.config import Config
 
 logger = getLogger(__name__)
 
@@ -28,5 +30,15 @@ async def generate_icons(sentences: GenerateIconRequest) -> GenerateIconsRespons
 
 
 @api.get("/icons/{request_id}/{image_id}", tags=["Icons"])
-async def get_icons(request_id: str, image_id: str) -> dict:
-    pass
+async def get_icons(request_id: str, image_id: str):
+    config = Config()
+    image_path = config.ICON_OUTPUT_PATH / request_id / image_id
+
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Icon not found")
+
+    return FileResponse(
+        path=image_path,
+        media_type="image/png",
+        filename=image_id
+    )
