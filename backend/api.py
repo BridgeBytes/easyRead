@@ -22,5 +22,11 @@ async def simplify_sentence(text: SimplifyTextRequest) -> SimplifiedTextResponse
 
 @api.post("/sentence/generate-icons", tags=["Sentence"])
 async def generate_icons(sentences: GenerateIconRequest) -> GenerateIconsResponse:
+    sentences = sentences.model_dump()['sentences']
+    response = controller.generate_icons(sentences)
+    return GenerateIconsResponse(request_id=response["request_id"], icons=response["icons"])
+
+
+@api.get("/icons/{request_id}/{image_id}", tags=["Icons"])
+async def get_icons(request_id: str, image_id: str) -> dict:
     pass
-    

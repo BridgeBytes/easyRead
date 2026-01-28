@@ -3,6 +3,7 @@ from pathlib import Path
 
 class Config:
     CONFIG_PATH = Path().resolve() / "config"
+    ICON_OUTPUT_PATH = Path().resolve() / "temp"
 
     def __init__(self) -> None:
         self.load_from_folder()

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List
 from enum import Enum
+from PIL import Image
 
 
 class SimplifyTextRequest(BaseModel):
@@ -33,7 +34,6 @@ class RevisedSentence(BaseModel):
 class Revision(BaseModel):
     revised_sentences: List[RevisedSentence]
 
-
 class SimplifiedTextResponse(BaseModel):
     simplified_text: SimplifiedText
     validation: Validation
@@ -45,13 +45,14 @@ class SymbolLibrary(str, Enum):
     LDS = "lds"
 
 
+class GeneratedIcon(RevisedSentence):
+    image_path: str = Field(..., description="Path to the generated icon image.")
+
 
 class GenerateIconRequest(BaseModel):
-    num_of_images: int = Field(default=1, description="Number of images to generate for the simplified text.")
-    symbol_library: SymbolLibrary = Field(
-        SymbolLibrary.OPEN_MOJI, description="The symbol library to use for generating icons."
-    )
+    sentences: List[RevisedSentence] = Field(..., description="List of revised sentences for which to generate icons.")
 
 
 class GenerateIconsResponse(BaseModel):
-    pass
+    request_id: str = Field(..., description="Unique identifier for the icon generation request.")
+    icons: List[GeneratedIcon] = Field(..., description="List of generated icons corresponding to the revised sentences.")
