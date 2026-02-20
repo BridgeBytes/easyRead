@@ -5,10 +5,9 @@ services:
     container_name: "nginx.api.ev.meshpower.co.rw"
     hostname: "nginx.api.ev.meshpower.co.rw"
     networks:
-      - network.dev.api.ev.meshpower.co.rw
+      - easyread
     depends_on:
-      - api
-      - database
+      - frontend
     ports:
       - 80:80
       - 443:443
