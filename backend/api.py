@@ -23,9 +23,13 @@ async def simplify_sentence(text: SimplifyTextRequest) -> SimplifiedTextResponse
 
 
 @api.post("/sentence/generate-icons", tags=["Sentence"])
-async def generate_icons(sentences: GenerateIconRequest) -> GenerateIconsResponse:
-    sentences = sentences.model_dump()['sentences']
-    response = controller.generate_icons(sentences)
+async def generate_icons(request: GenerateIconRequest) -> GenerateIconsResponse:
+    request_data = request.model_dump()
+    response = controller.generate_icons(
+        sentences=request_data['sentences'],
+        symbolset=request_data.get('symbolset', 'arasaac'),
+        use_global_symbols=request_data.get('use_global_symbols', True)
+    )
     return GenerateIconsResponse(request_id=response["request_id"], icons=response["icons"])
 
 
