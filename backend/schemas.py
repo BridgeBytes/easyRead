@@ -51,6 +51,8 @@ class GeneratedIcon(RevisedSentence):
 
 class GenerateIconRequest(BaseModel):
     sentences: List[RevisedSentence] = Field(..., description="List of revised sentences for which to generate icons.")
+    symbolset: str = Field(default="arasaac", description="Symbol library to use (e.g., 'arasaac', 'mulberry', 'sclera')")
+    use_global_symbols: bool = Field(default=True, description="Whether to use Global Symbols API (fallback to local generation if False or not found)")
 
 
 class GenerateIconsResponse(BaseModel):
