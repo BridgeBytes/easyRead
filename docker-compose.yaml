@@ -2,8 +2,8 @@ name: EasyRead Services
 services:
   nginx:
     image: nginx:latest
-    container_name: "nginx.api.ev.meshpower.co.rw"
-    hostname: "nginx.api.ev.meshpower.co.rw"
+    container_name: "nginx.easyread"
+    hostname: "nginx.easyread"
     networks:
       - easyread
     depends_on:
