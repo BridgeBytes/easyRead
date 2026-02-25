@@ -1,0 +1,28 @@
+# EasyRead HuggingFace Space requirements
+# GPU acceleration is used automatically when the Space hardware is set to GPU.
+
+# UI
+gradio>=5.0.0
+
+# AI — text simplification
+google-genai>=1.0.0
+
+# AI — image generation (Stable Diffusion + LoRA)
+torch>=2.0.0
+diffusers==0.36.0
+peft==0.18.1
+transformers>=4.30.0
+accelerate>=0.20.0
+xformers; sys_platform == "linux"  # GPU memory optimisation (Linux/CUDA only)
+
+# Image handling
+Pillow>=10.0.0
+
+# HTTP client (Global Symbols API)
+requests>=2.28.0
+
+# Configuration
+PyYAML>=6.0
+
+# Export
+python-docx>=1.1.0
