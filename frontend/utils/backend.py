@@ -45,6 +45,21 @@ class IconsResponse:
     icons: list[GeneratedIcon]
 
 
+@dataclass
+class SymbolSearchResult:
+    sentence: str
+    image_prompt: str
+    highlighted: bool
+    symbol_found: bool
+    symbol_image_path: Optional[str]
+
+
+@dataclass
+class SymbolSearchResponse:
+    request_id: str
+    results: list[SymbolSearchResult]
+
+
 class BackendClient:
     """Client for communicating with the EasyRead backend API."""
 
@@ -167,6 +182,67 @@ class BackendClient:
             request_id=data["request_id"],
             icons=icons,
         )
+
+    def search_symbols(self, sentences: list[RevisedSentence]) -> SymbolSearchResponse:
+        """Search Global Symbols API for each sentence."""
+        payload = {
+            "sentences": [
+                {
+                    "sentence": s.sentence,
+                    "image_prompt": s.image_prompt,
+                    "highlighted": s.highlighted,
+                }
+                for s in sentences
+            ]
+        }
+
+        response = requests.post(
+            f"{self.base_url}/sentence/search-symbols",
+            json=payload,
+            timeout=120,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        results = [
+            SymbolSearchResult(
+                sentence=r["sentence"],
+                image_prompt=r["image_prompt"],
+                highlighted=r["highlighted"],
+                symbol_found=r["symbol_found"],
+                symbol_image_path=r.get("symbol_image_path"),
+            )
+            for r in data["results"]
+        ]
+
+        return SymbolSearchResponse(request_id=data["request_id"], results=results)
+
+    def generate_ai_icons(self, request_id: str, sentences: list) -> IconsResponse:
+        """Generate AI icons for sentences, passing through symbol search results."""
+        payload = {
+            "request_id": request_id,
+            "sentences": sentences,
+        }
+
+        response = requests.post(
+            f"{self.base_url}/sentence/generate-ai-icons",
+            json=payload,
+            timeout=300,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        icons = [
+            GeneratedIcon(
+                sentence=icon["sentence"],
+                image_prompt=icon["image_prompt"],
+                highlighted=icon["highlighted"],
+                image_path=icon["image_path"],
+            )
+            for icon in data["icons"]
+        ]
+
+        return IconsResponse(request_id=data["request_id"], icons=icons)
 
     def get_icon_url(self, request_id: str, image_id: str) -> str:
         """

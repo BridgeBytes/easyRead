@@ -1,7 +1,12 @@
 from logging import getLogger
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from schemas import SimplifyTextRequest, SimplifiedTextResponse, GenerateIconRequest ,GenerateIconsResponse
+from schemas import (
+    SimplifyTextRequest, SimplifiedTextResponse,
+    GenerateIconRequest, GenerateIconsResponse,
+    SymbolSearchRequest, SymbolSearchResponse,
+    AIGenerateRequest,
+)
 from controller import Controller
 from services.config import Config
 
@@ -29,6 +34,26 @@ async def generate_icons(request: GenerateIconRequest) -> GenerateIconsResponse:
         sentences=request_data['sentences'],
         symbolset=request_data.get('symbolset', 'arasaac'),
         use_global_symbols=request_data.get('use_global_symbols', True)
+    )
+    return GenerateIconsResponse(request_id=response["request_id"], icons=response["icons"])
+
+
+@api.post("/sentence/search-symbols", tags=["Sentence"])
+async def search_symbols(request: SymbolSearchRequest) -> SymbolSearchResponse:
+    request_data = request.model_dump()
+    response = controller.search_symbols(
+        sentences=request_data['sentences'],
+        symbolset=request_data.get('symbolset', 'arasaac'),
+    )
+    return SymbolSearchResponse(request_id=response["request_id"], results=response["results"])
+
+
+@api.post("/sentence/generate-ai-icons", tags=["Sentence"])
+async def generate_ai_icons(request: AIGenerateRequest) -> GenerateIconsResponse:
+    request_data = request.model_dump()
+    response = controller.generate_ai_icons(
+        request_id=request_data['request_id'],
+        sentences=request_data['sentences'],
     )
     return GenerateIconsResponse(request_id=response["request_id"], icons=response["icons"])
 

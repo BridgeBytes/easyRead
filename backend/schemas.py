@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from enum import Enum
 from PIL import Image
 
@@ -58,3 +58,31 @@ class GenerateIconRequest(BaseModel):
 class GenerateIconsResponse(BaseModel):
     request_id: str = Field(..., description="Unique identifier for the icon generation request.")
     icons: List[GeneratedIcon] = Field(..., description="List of generated icons corresponding to the revised sentences.")
+
+
+# Separated symbol search + AI generation flow
+class SymbolSearchRequest(BaseModel):
+    sentences: List[RevisedSentence]
+    symbolset: str = Field(default="arasaac")
+
+
+class SymbolSearchResult(RevisedSentence):
+    symbol_found: bool
+    symbol_image_path: Optional[str] = None
+
+
+class SymbolSearchResponse(BaseModel):
+    request_id: str
+    results: List[SymbolSearchResult]
+
+
+class AIGenerateSentence(BaseModel):
+    sentence: str
+    ai_prompt: str
+    highlighted: bool
+    symbol_image_path: Optional[str] = None
+
+
+class AIGenerateRequest(BaseModel):
+    request_id: str
+    sentences: List[AIGenerateSentence]
