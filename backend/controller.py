@@ -40,8 +40,16 @@ class Controller:
         if not target_language:
             return text
             
-        template = self.config.translate_text['system_message']
-        prompt = template + "\n" + self.config.translate_text["user_message_template"].format(
+        # Safety check for missing config
+        if not hasattr(self.config, 'translate_text'):
+            logger.warning("translate_text config not found, using default translation prompt")
+            system_message = "You are a professional translator. Translate the following text to the target language. Output only the translation."
+            user_template = "Target Language: {target_language}\nText: {text}"
+        else:
+            system_message = self.config.translate_text['system_message']
+            user_template = self.config.translate_text["user_message_template"]
+
+        prompt = system_message + "\n" + user_template.format(
             target_language=target_language, text=text
         )
         
