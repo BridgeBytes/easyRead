@@ -55,6 +55,25 @@ services:
               capabilities: [gpu]
     networks:
       - easyread
+  tts:
+    build:
+      context: ./tts
+      dockerfile: Dockerfile
+    container_name: tts.easyread
+    hostname: tts.easyread
+    expose:
+      - 8001
+    networks:
+      - easyread
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
   minio:
     image: quay.io/minio/minio:latest # Use the official MinIO image
     container_name: minio

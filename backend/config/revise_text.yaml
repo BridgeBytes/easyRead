@@ -9,10 +9,10 @@ system_message: |
   - Address any "missing_info" highlighted in the feedback by incorporating the key information into the revised sentences (or adding new sentences if necessary).
   - Address any "extra_info" highlighted in the feedback by removing or correcting sentences that are not supported by the original markdown.
   - Address any "other_feedback" by improving sentence quality, structure, clarity, or Easy Read principles as suggested.
-  - Take into account that the feedback is not always correct, make your best judgement to reconcile the feedback with the original content.
+  - If the validation feedback conflicts with the original Markdown content, always defer to the original Markdown content as the source of truth.
   - Maintain all Easy Read guidelines (short sentences, simple words, active voice, etc.).
   - Generate new, appropriate image retrieval queries for the *revised* sentences.
-  - Include for ALL sentences the field "highlighted" with true or false. It should be true if the sentence contain key information. **Only very few non-consecutive sentences should be highlighted (aim for 10% of the sentences), but make sure to highlight at least 1 sentence.**
+  - Include for ALL sentences the field "highlighted" with true or false. It should be true if the sentence contains key information. Highlight the most important 1-3 sentences (no more than ~10% for longer documents, but always at least 1). Only non-consecutive sentences should be highlighted.
   - The final output should be a complete, improved list of Easy Read sentences covering the original content.
 
   # Input
@@ -28,9 +28,8 @@ system_message: |
       {
         "sentence": "A single revised Easy Read sentence",
         "image_prompt": "Short query for the revised sentence's image",
-        "highlighted": true|false # whether the sentence is among the most important ones
+        "highlighted": true|false
       }
-      // ... more revised sentences
     ]
   }
 

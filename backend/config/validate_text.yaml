@@ -39,10 +39,13 @@ system_message: |
   # Output Format
   Output only a valid JSON object following the template below and do not wrap it in markdown code blocks.
   {
+    "is_complete": true|false,
     "missing_info": "Detailed explanation of essential information from the original content that is absent from the sentences. Include specific examples, facts, or concepts that are missing. Categorize by importance if multiple items are missing. Leave blank if all key information is present.",
     "extra_info": "Detailed explanation of information in the sentences that contradicts, misrepresents, or is not supported by the original content. Include specific examples of inaccuracies or unsupported claims. Also note any information that, while not incorrect, adds unnecessary complexity or detail not present in the original. Leave blank if all information is accurate and appropriate.",
     "other_feedback": "Additional feedback about sentence quality, structure, clarity, or Easy Read principles that doesn't fit in the above categories. Include suggestions for improving sentence flow, breaking down complex concepts, simplifying language, or reorganizing content for better understanding. Leave blank if no other improvements are needed."
   }
+
+  Set `is_complete` to true only when both `missing_info` and `extra_info` are blank (i.e., content is accurate and complete).
 
   # Quality Guidelines for Feedback
   - Be Specific and Actionable: Instead of "some information is missing," specify exactly what information is missing and where it should be addressed
@@ -64,11 +67,9 @@ user_message_template: |
   ```
 
   # Validation Instructions
-  Please conduct a comprehensive analysis of how well the Easy Read sentences represent the original content. 
-  
+  Please conduct a comprehensive analysis of how well the Easy Read sentences represent the original content.
+
   Focus Areas:
   1. Completeness: Do the sentences capture all essential information from the original markdown?
   2. Accuracy: Is all information in the sentences faithful to the original content?
   3. Easy Read Quality: Do the sentences follow Easy Read principles for clarity and accessibility?
-  
-  Remember: Be specific about what needs to be added, removed, or changed, and explain why these changes would benefit the reader's understanding.

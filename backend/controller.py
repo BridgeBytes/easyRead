@@ -1,10 +1,12 @@
 from services.gemini import GeminiDriver
+from services.bedrock import BedrockDriver
 from services.storage import StorageDriver
 from services.config import Config
 from services.icons import IconGenerator
 from services.global_symbols import GlobalSymbolsService
 import json
 import os
+import re
 from logging import getLogger
 from uuid import uuid4
 from pathlib import Path
@@ -12,10 +14,16 @@ from pathlib import Path
 logger = getLogger(__name__)
 
 
+def _strip_code_fences(text: str) -> str:
+    """Remove markdown code fences (```json ... ```) that LLMs sometimes add."""
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+    return match.group(1).strip() if match else text.strip()
+
+
 class Controller:
 
     def __init__(self):
-        self.gemini = GeminiDriver()
+        self.bedrock = BedrockDriver()
         self.storage = StorageDriver()
         self.config = Config()
         self.icon_generator = IconGenerator()
@@ -26,10 +34,10 @@ class Controller:
         template = self.config.simplify_text['system_message']
         prompt = f"{template}\n\n Bellow is the Input Text to simplify:\n\n{text}\n\n"
 
-        response = self.gemini.generate_text(prompt)
+        response = self.bedrock.generate_text(prompt)
 
         try:
-            response_data = json.loads(response)
+            response_data = json.loads(_strip_code_fences(response))
             logger.info(f"Successfully parsed response JSON: {response_data}")
         except json.JSONDecodeError:
             logger.error(f"Failed to parse response as JSON. Raw response: {response}")
@@ -39,10 +47,10 @@ class Controller:
     def validate_text(self, original_sentence: str, simplified_sentences: list[dict]) -> dict:
         template = self.config.validate_text['system_message']
         prompt = template + "\n" + self.config.validate_text["user_message_template"].format(original_markdown=original_sentence, simplified_sentences=json.dumps(simplified_sentences))
-        response = self.gemini.generate_text(prompt)
+        response = self.bedrock.generate_text(prompt)
 
         try:
-            response_data = json.loads(response)
+            response_data = json.loads(_strip_code_fences(response))
             logger.info(f"Successfully parsed response JSON: {response_data}")
         except json.JSONDecodeError:
             response_data = {"error": "Failed to parse response as JSON.", "raw_response": response}
@@ -52,10 +60,10 @@ class Controller:
     def revise_text(self, original_text: str, easy_read_sentences: list, feedback: str) -> dict:
         template = self.config.revise_text['system_message']
         prompt = template + "\n" + self.config.revise_text["user_message_template"].format(original_markdown=original_text, simplified_sentences=json.dumps(easy_read_sentences), validation_feedback=feedback)
-        response = self.gemini.generate_text(prompt)
+        response = self.bedrock.generate_text(prompt)
 
         try:
-            response_data = json.loads(response)
+            response_data = json.loads(_strip_code_fences(response))
             logger.info(f"Successfully parsed response JSON: {response_data}")
         except json.JSONDecodeError:
             response_data = {"error": "Failed to parse response as JSON.", "raw_response": response}
@@ -134,6 +142,92 @@ class Controller:
             "icons": sentences
         }
 
+    def search_symbols(self, sentences: list[dict], symbolset: str = "arasaac") -> dict:
+        """
+        Search Global Symbols API for each sentence without falling back to AI generation.
 
-        
+        Returns:
+            Dict with request_id and list of results containing symbol_found + symbol_image_path.
+        """
+        request_id = str(uuid4())
+        request_dir = Path(self.config.ICON_OUTPUT_PATH) / request_id
+        request_dir.mkdir(parents=True, exist_ok=True)
 
+        results = []
+        for sentence in sentences:
+            prompt = sentence['image_prompt']
+            safe_prompt = "_".join(prompt.split())
+            image_path = request_dir / f"{safe_prompt}.png"
+
+            symbol_found = False
+            symbol_image_path = None
+
+            try:
+                downloaded_path = self.global_symbols.search_and_download(
+                    query=prompt,
+                    output_path=image_path,
+                    symbolset=symbolset
+                )
+                if downloaded_path:
+                    symbol_found = True
+                    symbol_image_path = "/".join(["icons", request_id, f"{safe_prompt}.png"])
+                    logger.info(f"Found symbol for '{prompt}'")
+                else:
+                    logger.info(f"No symbol found for '{prompt}'")
+            except Exception as e:
+                logger.error(f"Error searching symbols for '{prompt}': {e}")
+
+            results.append({
+                "sentence": sentence['sentence'],
+                "image_prompt": sentence['image_prompt'],
+                "highlighted": sentence['highlighted'],
+                "symbol_found": symbol_found,
+                "symbol_image_path": symbol_image_path,
+            })
+
+        return {
+            "request_id": request_id,
+            "results": results,
+        }
+
+    def generate_ai_icons(self, request_id: str, sentences: list[dict]) -> dict:
+        """
+        Generate AI icons for sentences, passing through symbol search results where available.
+
+        For sentences with symbol_image_path set, uses that path directly.
+        For others, generates via the ETH LoRA model using ai_prompt.
+
+        Returns:
+            Dict with request_id and list of icons matching GenerateIconsResponse shape.
+        """
+        request_dir = Path(self.config.ICON_OUTPUT_PATH) / request_id
+        request_dir.mkdir(parents=True, exist_ok=True)
+
+        for sentence in sentences:
+            symbol_image_path = sentence.get('symbol_image_path')
+
+            if symbol_image_path:
+                sentence['image_path'] = symbol_image_path
+                logger.info(f"Using existing symbol for '{sentence['sentence']}'")
+            else:
+                ai_prompt = sentence['ai_prompt']
+                safe_prompt = "_".join(ai_prompt.split())[:80]
+                image_path = request_dir / f"ai_{safe_prompt}.png"
+
+                try:
+                    image = self.icon_generator.generate(ai_prompt)
+                    image.save(image_path)
+                    logger.info(f"Saved AI-generated icon for '{ai_prompt}'")
+                except Exception as e:
+                    logger.error(f"Error generating AI icon for '{ai_prompt}': {e}")
+                    continue
+
+                sentence['image_path'] = "/".join(["icons", request_id, f"ai_{safe_prompt}.png"])
+
+            # Keep image_prompt for response compatibility with GenerateIconsResponse
+            sentence['image_prompt'] = sentence.get('ai_prompt', sentence.get('sentence', ''))
+
+        return {
+            "request_id": request_id,
+            "icons": sentences,
+        }

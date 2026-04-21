@@ -5,8 +5,10 @@ A web interface for the EasyRead document simplification service.
 Converts complex text into Easy Read format with pictogram icons.
 """
 
+import base64
 import logging
 import gradio as gr
+import requests
 import tempfile
 
 from utils.backend import BackendClient, RevisedSentence
@@ -28,9 +30,12 @@ logger.info(f"Backend client initialized with URL: {client.base_url}")
 state = {
     "title": "",
     "revised_sentences": [],
+    "symbol_results": [],
     "request_id": "",
     "icons": [],
     "image_data": {},
+    "audio_request_id": "",
+    "audio_data": {},
 }
 
 
@@ -43,7 +48,11 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
         return (
             gr.update(visible=True, value="Please enter some text to simplify."),
             gr.update(visible=False),  # review section
+            gr.update(visible=False),  # symbol_results_section
             gr.update(visible=False),  # results section
+            "",
+            "",
+            None,
         )
 
     try:
@@ -77,6 +86,7 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
         return (
             gr.update(visible=False),  # error
             gr.update(visible=True),   # review section
+            gr.update(visible=False),  # symbol_results_section
             gr.update(visible=False),  # results section
             f"## {response.title}",
             validation_text,
@@ -93,6 +103,7 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
 
         return (
             gr.update(visible=True, value=user_message),
+            gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
             "",
@@ -131,15 +142,89 @@ def update_sentences_from_table(table_data):
         )
 
 
-def generate_icons(table_data):
-    """Generate icons for approved sentences."""
-    logger.info("generate_icons called")
+def search_symbols_step(table_data):
+    """Search Global Symbols for each sentence."""
+    logger.info("search_symbols_step called")
     update_sentences_from_table(table_data)
 
     if not state["revised_sentences"]:
         logger.warning("No revised sentences in state")
         return (
-            gr.update(visible=True, value="No sentences to generate icons for."),
+            gr.update(visible=True, value="No sentences to search symbols for."),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            None,
+        )
+
+    try:
+        logger.info(f"Searching symbols for {len(state['revised_sentences'])} sentences")
+        response = client.search_symbols(state["revised_sentences"])
+        state["symbol_results"] = response.results
+        state["request_id"] = response.request_id
+
+        # Build per-sentence symbol results HTML
+        symbol_results_html = '<div class="results-container"><h3>Symbol Search Results</h3>'
+        for result in response.results:
+            if result.symbol_found and result.symbol_image_path:
+                image_id = result.symbol_image_path.split("/")[-1]
+                try:
+                    img_bytes = client.fetch_icon(response.request_id, image_id)
+                    img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+                    img_src = f"data:image/png;base64,{img_b64}"
+                except Exception:
+                    img_src = ""
+                icon_html = (
+                    f'<img src="{img_src}" alt="symbol" />'
+                    if img_src
+                    else '<div class="placeholder">Error</div>'
+                )
+                badge = '<span class="badge" style="background:#27ae60">Found</span>'
+            else:
+                icon_html = '<div class="placeholder">No match</div>'
+                badge = '<span class="badge" style="background:#95a5a6">Not found</span>'
+
+            symbol_results_html += f"""
+            <div class="sentence-row">
+                <div class="icon-col">{icon_html}</div>
+                <div class="text-col">
+                    {badge}
+                    <p>{result.sentence}</p>
+                </div>
+            </div>
+            """
+        symbol_results_html += "</div>"
+
+        # AI prompts table pre-filled with the LLM image_prompt (keywords)
+        ai_prompts_data = [
+            [idx + 1, result.sentence, result.image_prompt]
+            for idx, result in enumerate(response.results)
+        ]
+
+        return (
+            gr.update(visible=False),   # error
+            gr.update(visible=True),    # symbol_results_section
+            symbol_results_html,        # symbol_results_display
+            ai_prompts_data,            # ai_prompts_table
+        )
+
+    except Exception as e:
+        logger.error(f"Error in search_symbols_step: {type(e).__name__}: {e}", exc_info=True)
+        return (
+            gr.update(visible=True, value="Failed to search symbols. Please try again."),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            None,
+        )
+
+
+def generate_ai_icons_step(ai_prompts_table_data):
+    """Generate AI icons using user-edited prompts, passing through symbol matches."""
+    logger.info("generate_ai_icons_step called")
+
+    if not state["symbol_results"]:
+        logger.warning("No symbol results in state")
+        return (
+            gr.update(visible=True, value="No symbol results. Please search symbols first."),
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
@@ -147,26 +232,47 @@ def generate_icons(table_data):
             None,
         )
 
+    # Parse AI prompts from table
+    rows = []
+    if hasattr(ai_prompts_table_data, "values"):
+        rows = ai_prompts_table_data.values.tolist()
+    elif isinstance(ai_prompts_table_data, dict) and "data" in ai_prompts_table_data:
+        rows = ai_prompts_table_data["data"]
+    elif isinstance(ai_prompts_table_data, list):
+        rows = ai_prompts_table_data
+
+    ai_prompt_map = {}
+    for row in rows:
+        if isinstance(row, (list, tuple)) and len(row) >= 3:
+            idx = int(row[0]) - 1
+            ai_prompt_map[idx] = str(row[2])
+
+    # Build sentence list merging symbol results with edited AI prompts
+    sentences = []
+    for idx, result in enumerate(state["symbol_results"]):
+        ai_prompt = ai_prompt_map.get(idx, result.sentence)
+        sentences.append({
+            "sentence": result.sentence,
+            "ai_prompt": ai_prompt,
+            "highlighted": result.highlighted,
+            "symbol_image_path": result.symbol_image_path,
+        })
+
     try:
-        logger.info(f"Calling backend to generate icons for {len(state['revised_sentences'])} sentences")
-        response = client.generate_icons(state["revised_sentences"])
-        logger.info(f"Icons generated: request_id={response.request_id}, count={len(response.icons)}")
+        logger.info(f"Generating AI icons for {len(sentences)} sentences")
+        response = client.generate_ai_icons(state["request_id"], sentences)
         state["request_id"] = response.request_id
         state["icons"] = response.icons
         state["image_data"] = {}
 
-        # Build the results display with images and sentences
         results_html = f'<div class="results-container"><h2>{state["title"]}</h2>'
 
         for icon in response.icons:
             image_id = icon.image_path.split("/")[-1] if icon.image_path else ""
 
-            # Fetch the actual image
             try:
                 img_bytes = client.fetch_icon(response.request_id, image_id)
                 state["image_data"][image_id] = img_bytes
-
-                import base64
                 img_b64 = base64.b64encode(img_bytes).decode("utf-8")
                 img_src = f"data:image/png;base64,{img_b64}"
             except Exception:
@@ -201,9 +307,9 @@ def generate_icons(table_data):
         )
 
     except Exception as e:
-        logger.error(f"Error in generate_icons: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"Error in generate_ai_icons_step: {type(e).__name__}: {e}", exc_info=True)
         return (
-            gr.update(visible=True, value="Failed to generate icons. Please try again."),
+            gr.update(visible=True, value="Failed to generate AI icons. Please try again."),
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
@@ -269,14 +375,87 @@ def export_markdown():
         return f.name
 
 
+def generate_audio_step():
+    """Synthesize all sentences to audio and render inline players."""
+    if not state["icons"]:
+        return (
+            gr.update(visible=True, value="No sentences available. Complete the document first."),
+            gr.update(visible=False),
+            gr.update(visible=False),
+        )
+
+    sentences = [icon.sentence for icon in state["icons"]]
+    try:
+        logger.info(f"Synthesizing audio for {len(sentences)} sentences")
+        response = client.synthesize_audio(sentences)
+        state["audio_request_id"] = response.request_id
+        state["audio_data"] = {}
+
+        for af in response.audio_files:
+            audio_bytes = client.fetch_audio(response.request_id, af.filename)
+            state["audio_data"][af.id] = audio_bytes
+
+        # Build audio players HTML
+        audio_html = '<div class="results-container"><h3>Audio Playback</h3>'
+        for idx, icon in enumerate(state["icons"]):
+            sentence_id = idx + 1
+            audio_bytes = state["audio_data"].get(sentence_id, b"")
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+            audio_src = f"data:audio/wav;base64,{audio_b64}"
+            audio_html += f"""
+            <div class="sentence-row">
+                <div class="text-col">
+                    <p>{icon.sentence}</p>
+                    <audio controls src="{audio_src}" style="width:100%;margin-top:6px;"></audio>
+                </div>
+            </div>
+            """
+        audio_html += "</div>"
+
+        return (
+            gr.update(visible=False),             # error
+            gr.update(visible=True, value=audio_html),  # audio_display
+            gr.update(visible=True),              # audio_export_row
+        )
+
+    except Exception as e:
+        logger.error(f"Error in generate_audio_step: {type(e).__name__}: {e}", exc_info=True)
+        return (
+            gr.update(visible=True, value="Failed to generate audio. Please try again."),
+            gr.update(visible=False),
+            gr.update(visible=False),
+        )
+
+
+def export_audio_zip():
+    """Download ZIP of all synthesized audio files."""
+    if not state.get("audio_request_id"):
+        return None
+
+    try:
+        audio_bytes = requests.get(
+            client.get_audio_export_url(state["audio_request_id"]),
+            timeout=60,
+        ).content
+        with tempfile.NamedTemporaryFile(suffix=".zip", prefix="easyread_audio_", delete=False) as f:
+            f.write(audio_bytes)
+            return f.name
+    except Exception as e:
+        logger.error(f"Error exporting audio ZIP: {e}")
+        return None
+
+
 def reset_app():
     """Reset the application state."""
     state.update({
         "title": "",
         "revised_sentences": [],
+        "symbol_results": [],
         "request_id": "",
         "icons": [],
         "image_data": {},
+        "audio_request_id": "",
+        "audio_data": {},
     })
     return (
         "",   # text input
@@ -285,6 +464,7 @@ def reset_app():
         gr.update(visible=False),  # error
         gr.update(visible=False),  # loading
         gr.update(visible=False),  # review section
+        gr.update(visible=False),  # symbol_results_section
         gr.update(visible=False),  # results section
     )
 
@@ -311,7 +491,7 @@ custom_css = """
     max-width: 100%;
     font-family: Arial, sans-serif;
 }
-.results-container h2 {
+.results-container h2, .results-container h3 {
     text-align: center;
     color: #333;
     margin-bottom: 25px;
@@ -466,7 +646,7 @@ with gr.Blocks(
             validation_display = gr.Markdown()
 
         gr.Markdown(
-            "Edit the sentences below if needed, then click **Generate Icons**.",
+            "Edit the sentences below if needed, then click **Search Global Symbols**.",
             elem_classes=["hint"],
         )
 
@@ -478,15 +658,41 @@ with gr.Blocks(
             wrap=True,
         )
 
-        generate_btn = gr.Button(
-            "Generate Icons",
+        search_symbols_btn = gr.Button(
+            "Search Global Symbols",
             variant="primary",
             size="lg",
         )
 
-    # Step 3: Results Section (appears after icon generation)
+    # Step 3: Symbol Results Section (appears after symbol search)
+    with gr.Group(visible=False, elem_classes=["section-box"]) as symbol_results_section:
+        gr.Markdown("### Step 3: Symbol Search Results")
+
+        symbol_results_display = gr.HTML()
+
+        gr.Markdown(
+            "Edit the **AI Prompt** column if you want to customize the image for sentences "
+            "where no symbol was found, then click **Generate AI Images**.",
+            elem_classes=["hint"],
+        )
+
+        ai_prompts_table = gr.Dataframe(
+            headers=["#", "Sentence", "AI Prompt"],
+            datatype=["number", "str", "str"],
+            col_count=(3, "fixed"),
+            interactive=True,
+            wrap=True,
+        )
+
+        generate_ai_btn = gr.Button(
+            "Generate AI Images",
+            variant="primary",
+            size="lg",
+        )
+
+    # Step 4: Results Section (appears after AI image generation)
     with gr.Group(visible=False, elem_classes=["section-box"]) as results_section:
-        gr.Markdown("### Step 3: Your Easy Read Document")
+        gr.Markdown("### Step 4: Your Easy Read Document")
 
         results_display = gr.HTML()
 
@@ -498,6 +704,16 @@ with gr.Blocks(
             docx_download = gr.File(label="Word Document", visible=False)
             md_download = gr.File(label="Markdown File", visible=False)
 
+        gr.Markdown("---")
+        generate_audio_btn = gr.Button("Generate Audio", variant="primary")
+
+        audio_display = gr.HTML(visible=False)
+
+        with gr.Row(visible=False) as audio_export_row:
+            audio_export_btn = gr.Button("Export Audio (.zip)", variant="secondary")
+
+        audio_zip_download = gr.File(label="Audio ZIP", visible=False)
+
     # Event handlers
     simplify_btn.click(
         fn=lambda: gr.update(visible=True, value="Simplifying your text... This may take a moment."),
@@ -508,6 +724,7 @@ with gr.Blocks(
         outputs=[
             error_box,
             review_section,
+            symbol_results_section,
             results_section,
             title_display,
             validation_display,
@@ -518,12 +735,29 @@ with gr.Blocks(
         outputs=[loading_box],
     )
 
-    generate_btn.click(
-        fn=lambda: gr.update(visible=True, value="Generating icons... This may take a moment."),
+    search_symbols_btn.click(
+        fn=lambda: gr.update(visible=True, value="Searching Global Symbols... This may take a moment."),
         outputs=[loading_box],
     ).then(
-        fn=generate_icons,
+        fn=search_symbols_step,
         inputs=[sentences_table],
+        outputs=[
+            error_box,
+            symbol_results_section,
+            symbol_results_display,
+            ai_prompts_table,
+        ],
+    ).then(
+        fn=lambda: gr.update(visible=False),
+        outputs=[loading_box],
+    )
+
+    generate_ai_btn.click(
+        fn=lambda: gr.update(visible=True, value="Generating AI images... This may take a moment."),
+        outputs=[loading_box],
+    ).then(
+        fn=generate_ai_icons_step,
+        inputs=[ai_prompts_table],
         outputs=[
             error_box,
             results_section,
@@ -555,6 +789,27 @@ with gr.Blocks(
         outputs=[md_download],
     )
 
+    generate_audio_btn.click(
+        fn=lambda: gr.update(visible=True, value="Generating audio... This may take a moment."),
+        outputs=[loading_box],
+    ).then(
+        fn=generate_audio_step,
+        inputs=[],
+        outputs=[error_box, audio_display, audio_export_row],
+    ).then(
+        fn=lambda: gr.update(visible=False),
+        outputs=[loading_box],
+    )
+
+    audio_export_btn.click(
+        fn=export_audio_zip,
+        inputs=[],
+        outputs=[audio_zip_download],
+    ).then(
+        fn=lambda: gr.update(visible=True),
+        outputs=[audio_zip_download],
+    )
+
     reset_btn.click(
         fn=reset_app,
         inputs=[],
@@ -565,9 +820,11 @@ with gr.Blocks(
             error_box,
             loading_box,
             review_section,
+            symbol_results_section,
             results_section,
         ],
     )
+    # reset_app returns the same 8 outputs; audio state is cleared internally
 
 
 if __name__ == "__main__":
