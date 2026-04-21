@@ -23,22 +23,48 @@ def _strip_code_fences(text: str) -> str:
 class Controller:
 
     def __init__(self):
-        self.bedrock = BedrockDriver()
+        # Fallback to Gemini if Bedrock is not available (common in this env)
+        try:
+            from services.bedrock import BedrockDriver
+            self.bedrock = BedrockDriver()
+        except (ImportError, ModuleNotFoundError):
+            self.bedrock = None
+            
+        self.gemini = GeminiDriver()
         self.storage = StorageDriver()
         self.config = Config()
         self.icon_generator = IconGenerator()
         self.global_symbols = GlobalSymbolsService()
 
+    def translate_text(self, text: str, target_language: str) -> str:
+        if not target_language:
+            return text
+            
+        template = self.config.translate_text['system_message']
+        prompt = template + "\n" + self.config.translate_text["user_message_template"].format(
+            target_language=target_language, text=text
+        )
+        
+        # Use Gemini for translation as it's reliable
+        response = self.gemini.generate_text(prompt)
+        return response.strip()
 
-    def simplify_text(self, text: str) -> dict:
+    def simplify_text(self, text: str, target_language: str = None) -> dict:
         template = self.config.simplify_text['system_message']
         prompt = f"{template}\n\n Bellow is the Input Text to simplify:\n\n{text}\n\n"
 
-        response = self.bedrock.generate_text(prompt)
+        driver = self.bedrock if self.bedrock else self.gemini
+        response = driver.generate_text(prompt)
 
         try:
             response_data = json.loads(_strip_code_fences(response))
             logger.info(f"Successfully parsed response JSON: {response_data}")
+            
+            # Translate if requested
+            if target_language:
+                for s in response_data.get('simplified_sentences', []):
+                    s['translated_sentence'] = self.translate_text(s['sentence'], target_language)
+                    
         except json.JSONDecodeError:
             logger.error(f"Failed to parse response as JSON. Raw response: {response}")
             response_data = {"error": "Failed to parse response as JSON.", "raw_response": response}
@@ -47,7 +73,9 @@ class Controller:
     def validate_text(self, original_sentence: str, simplified_sentences: list[dict]) -> dict:
         template = self.config.validate_text['system_message']
         prompt = template + "\n" + self.config.validate_text["user_message_template"].format(original_markdown=original_sentence, simplified_sentences=json.dumps(simplified_sentences))
-        response = self.bedrock.generate_text(prompt)
+        
+        driver = self.bedrock if self.bedrock else self.gemini
+        response = driver.generate_text(prompt)
 
         try:
             response_data = json.loads(_strip_code_fences(response))
@@ -57,14 +85,22 @@ class Controller:
             logger.error(f"Failed to parse response as JSON. Raw response: {response}")
         return response_data
 
-    def revise_text(self, original_text: str, easy_read_sentences: list, feedback: str) -> dict:
+    def revise_text(self, original_text: str, easy_read_sentences: list, feedback: str, target_language: str = None) -> dict:
         template = self.config.revise_text['system_message']
         prompt = template + "\n" + self.config.revise_text["user_message_template"].format(original_markdown=original_text, simplified_sentences=json.dumps(easy_read_sentences), validation_feedback=feedback)
-        response = self.bedrock.generate_text(prompt)
+        
+        driver = self.bedrock if self.bedrock else self.gemini
+        response = driver.generate_text(prompt)
 
         try:
             response_data = json.loads(_strip_code_fences(response))
             logger.info(f"Successfully parsed response JSON: {response_data}")
+            
+            # Translate revised sentences if requested
+            if target_language:
+                for s in response_data.get('revised_sentences', []):
+                    s['translated_sentence'] = self.translate_text(s['sentence'], target_language)
+                    
         except json.JSONDecodeError:
             response_data = {"error": "Failed to parse response as JSON.", "raw_response": response}
             logger.error(f"Failed to parse response as JSON. Raw response: {response}")

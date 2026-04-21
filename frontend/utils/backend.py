@@ -14,6 +14,7 @@ from dataclasses import dataclass
 class SimplifiedSentence:
     sentence: str
     image_prompt: str
+    translated_sentence: Optional[str] = None
 
 
 @dataclass
@@ -21,6 +22,7 @@ class RevisedSentence:
     sentence: str
     image_prompt: str
     highlighted: bool
+    translated_sentence: Optional[str] = None
 
 
 @dataclass
@@ -29,6 +31,7 @@ class GeneratedIcon:
     image_prompt: str
     highlighted: bool
     image_path: str
+    translated_sentence: Optional[str] = None
 
 
 @dataclass
@@ -92,6 +95,7 @@ class BackendClient:
         text: str,
         custom_context: Optional[str] = None,
         unalterable_terms: Optional[str] = None,
+        target_language: Optional[str] = None,
     ) -> SimplifyResponse:
         """
         Send text to the backend for simplification.
@@ -100,6 +104,7 @@ class BackendClient:
             text: The text to be simplified
             custom_context: Optional context to aid in simplification
             unalterable_terms: Optional comma-separated terms to preserve
+            target_language: Optional target language for translation
 
         Returns:
             SimplifyResponse with title, simplified sentences, validation, and revised sentences
@@ -113,6 +118,8 @@ class BackendClient:
             payload["custom_context"] = custom_context
         if unalterable_terms:
             payload["unalterable_terms_text"] = unalterable_terms
+        if target_language:
+            payload["target_language"] = target_language
 
         response = requests.post(
             f"{self.base_url}/sentence/simplify",
@@ -126,6 +133,7 @@ class BackendClient:
             SimplifiedSentence(
                 sentence=s["sentence"],
                 image_prompt=s["image_prompt"],
+                translated_sentence=s.get("translated_sentence"),
             )
             for s in data["simplified_text"]["simplified_sentences"]
         ]
@@ -135,6 +143,7 @@ class BackendClient:
                 sentence=s["sentence"],
                 image_prompt=s["image_prompt"],
                 highlighted=s["highlighted"],
+                translated_sentence=s.get("translated_sentence"),
             )
             for s in data["revision"]["revised_sentences"]
         ]
@@ -145,6 +154,16 @@ class BackendClient:
             validation=data["validation"],
             revised_sentences=revised_sentences,
         )
+
+    def translate_text(self, text: str, target_language: str) -> str:
+        """Translate text to the target language."""
+        response = requests.post(
+            f"{self.base_url}/sentence/translate",
+            params={"text": text, "target_language": target_language},
+            timeout=60,
+        )
+        response.raise_for_status()
+        return response.text
 
     def generate_icons(
         self, sentences: list[RevisedSentence]

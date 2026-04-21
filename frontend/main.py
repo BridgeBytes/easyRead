@@ -36,12 +36,15 @@ state = {
     "image_data": {},
     "audio_request_id": "",
     "audio_data": {},
+    "target_language": None,
 }
 
 
-def simplify_text(text: str, context: str, unalterable_terms: str):
+def simplify_text(text: str, context: str, unalterable_terms: str, target_lang: str):
     """Send text to backend for simplification."""
-    logger.info(f"simplify_text called with text length: {len(text)}")
+    logger.info(f"simplify_text called with text length: {len(text)}, lang: {target_lang}")
+    
+    state["target_language"] = target_lang if target_lang != "None" else None
 
     if not text.strip():
         logger.warning("Empty text received")
@@ -53,6 +56,7 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
             "",
             "",
             None,
+            gr.update(visible=False), # input translation
         )
 
     try:
@@ -61,6 +65,7 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
             text=text,
             custom_context=context if context.strip() else None,
             unalterable_terms=unalterable_terms if unalterable_terms.strip() else None,
+            target_language=state["target_language"],
         )
         logger.info(f"Backend response received: title={response.title}")
 
@@ -70,18 +75,30 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
         # Format sentences for display and editing
         df_data = []
         for idx, s in enumerate(response.revised_sentences):
-            df_data.append([
+            row = [
                 idx + 1,
                 s.sentence,
                 s.image_prompt,
                 s.highlighted,
-            ])
+            ]
+            if state["target_language"]:
+                row.append(s.translated_sentence or "")
+            df_data.append(row)
 
         validation_text = f"""**Missing Information:** {response.validation.get('missing_info', 'None')}
 
 **Extra Information:** {response.validation.get('extra_info', 'None')}
 
 **Other Feedback:** {response.validation.get('other_feedback', 'None')}"""
+
+        # Translate input text if needed
+        input_translation_md = ""
+        if state["target_language"]:
+            try:
+                translated_input = client.translate_text(text, state["target_language"])
+                input_translation_md = f"### Input Translation ({state['target_language']})\n\n{translated_input}"
+            except Exception as e:
+                logger.error(f"Error translating input text: {e}")
 
         return (
             gr.update(visible=False),  # error
@@ -91,6 +108,7 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
             f"## {response.title}",
             validation_text,
             df_data,
+            gr.update(visible=bool(input_translation_md), value=input_translation_md),
         )
 
     except Exception as e:
@@ -109,6 +127,7 @@ def simplify_text(text: str, context: str, unalterable_terms: str):
             "",
             "",
             None,
+            gr.update(visible=False),
         )
 
 
@@ -133,11 +152,14 @@ def update_sentences_from_table(table_data):
     for row in rows:
         if not isinstance(row, (list, tuple)) or len(row) < 4:
             continue
+            
+        translated = row[4] if len(row) > 4 else None
         state["revised_sentences"].append(
             RevisedSentence(
                 sentence=str(row[1]),
                 image_prompt=str(row[2]),
                 highlighted=bool(row[3]),
+                translated_sentence=str(translated) if translated else None,
             )
         )
 
@@ -159,6 +181,11 @@ def search_symbols_step(table_data):
     try:
         logger.info(f"Searching symbols for {len(state['revised_sentences'])} sentences")
         response = client.search_symbols(state["revised_sentences"])
+        # Carry over translations to symbol results
+        for idx, result in enumerate(response.results):
+            if idx < len(state["revised_sentences"]):
+                result.translated_sentence = state["revised_sentences"][idx].translated_sentence
+
         state["symbol_results"] = response.results
         state["request_id"] = response.request_id
 
@@ -183,12 +210,17 @@ def search_symbols_step(table_data):
                 icon_html = '<div class="placeholder">No match</div>'
                 badge = '<span class="badge" style="background:#95a5a6">Not found</span>'
 
+            translation_html = ""
+            if result.translated_sentence:
+                translation_html = f'<p style="color:#666;font-style:italic;margin-top:4px;">{result.translated_sentence}</p>'
+
             symbol_results_html += f"""
             <div class="sentence-row">
                 <div class="icon-col">{icon_html}</div>
                 <div class="text-col">
                     {badge}
                     <p>{result.sentence}</p>
+                    {translation_html}
                 </div>
             </div>
             """
@@ -256,6 +288,7 @@ def generate_ai_icons_step(ai_prompts_table_data):
             "ai_prompt": ai_prompt,
             "highlighted": result.highlighted,
             "symbol_image_path": result.symbol_image_path,
+            "translated_sentence": result.translated_sentence,
         })
 
     try:
@@ -283,6 +316,10 @@ def generate_ai_icons_step(ai_prompts_table_data):
                 '<span class="badge">Key Point</span>' if icon.highlighted else ""
             )
 
+            translation_html = ""
+            if icon.translated_sentence:
+                translation_html = f'<p style="color:#666;font-style:italic;margin-top:4px;">{icon.translated_sentence}</p>'
+
             results_html += f"""
             <div class="sentence-row {highlight_class}">
                 <div class="icon-col">
@@ -291,6 +328,7 @@ def generate_ai_icons_step(ai_prompts_table_data):
                 <div class="text-col">
                     {highlight_badge}
                     <p>{icon.sentence}</p>
+                    {translation_html}
                 </div>
             </div>
             """
@@ -456,6 +494,7 @@ def reset_app():
         "image_data": {},
         "audio_request_id": "",
         "audio_data": {},
+        "target_language": None,
     })
     return (
         "",   # text input
@@ -466,6 +505,7 @@ def reset_app():
         gr.update(visible=False),  # review section
         gr.update(visible=False),  # symbol_results_section
         gr.update(visible=False),  # results section
+        gr.update(visible=False),  # input translation
     )
 
 
@@ -625,16 +665,25 @@ with gr.Blocks(
                 lines=2,
                 scale=1,
             )
-
+            
         with gr.Row():
-            simplify_btn = gr.Button("Simplify Text", variant="primary", size="lg")
-            reset_btn = gr.Button("Reset", variant="secondary")
+            target_lang_dropdown = gr.Dropdown(
+                choices=["None", "Swahili", "French", "Spanish", "German"],
+                value="None",
+                label="Translate to (Optional)",
+                scale=1,
+            )
+            simplify_btn = gr.Button("Simplify Text", variant="primary", size="lg", scale=2)
+            reset_btn = gr.Button("Reset", variant="secondary", scale=1)
 
     # Error display
     error_box = gr.Markdown(visible=False, elem_classes=["error-box"])
 
     # Loading indicator
     loading_box = gr.Markdown(visible=False, elem_classes=["loading-box"])
+    
+    # Input translation display
+    input_translation_display = gr.Markdown(visible=False, elem_classes=["section-box"])
 
     # Step 2: Review Section (appears after simplification)
     with gr.Group(visible=False, elem_classes=["section-box"]) as review_section:
@@ -651,9 +700,9 @@ with gr.Blocks(
         )
 
         sentences_table = gr.Dataframe(
-            headers=["#", "Sentence", "Image Prompt", "Highlighted"],
-            datatype=["number", "str", "str", "bool"],
-            col_count=(4, "fixed"),
+            headers=["#", "Sentence", "Image Prompt", "Highlighted", "Translation"],
+            datatype=["number", "str", "str", "bool", "str"],
+            col_count=(5, "fixed"),
             interactive=True,
             wrap=True,
         )
@@ -720,7 +769,7 @@ with gr.Blocks(
         outputs=[loading_box],
     ).then(
         fn=simplify_text,
-        inputs=[input_text, context_input, terms_input],
+        inputs=[input_text, context_input, terms_input, target_lang_dropdown],
         outputs=[
             error_box,
             review_section,
@@ -729,6 +778,7 @@ with gr.Blocks(
             title_display,
             validation_display,
             sentences_table,
+            input_translation_display,
         ],
     ).then(
         fn=lambda: gr.update(visible=False),
@@ -822,9 +872,10 @@ with gr.Blocks(
             review_section,
             symbol_results_section,
             results_section,
+            input_translation_display,
         ],
     )
-    # reset_app returns the same 8 outputs; audio state is cleared internally
+    # reset_app returns the same outputs; audio state is cleared internally
 
 
 if __name__ == "__main__":
