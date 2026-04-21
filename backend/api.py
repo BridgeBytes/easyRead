@@ -27,10 +27,15 @@ controller = Controller()
 
 @api.post("/sentence/simplify", tags=["Sentence"])
 async def simplify_sentence(text: SimplifyTextRequest) -> SimplifiedTextResponse:
-    simple_text: dict = controller.simplify_text(text.text)
+    target_lang = text.target_language
+    simple_text: dict = controller.simplify_text(text.text, target_language=target_lang)
     validation = controller.validate_text(text.text, simple_text['simplified_sentences'])
-    revision = controller.revise_text(text.text, simple_text['simplified_sentences'], validation)
+    revision = controller.revise_text(text.text, simple_text['simplified_sentences'], validation, target_language=target_lang)
     return SimplifiedTextResponse(simplified_text=simple_text,validation=validation,revision=revision)
+
+@api.post("/sentence/translate", tags=["Sentence"])
+async def translate_text(text: str, target_language: str) -> str:
+    return controller.translate_text(text, target_language)
 
 
 @api.post("/sentence/generate-icons", tags=["Sentence"])

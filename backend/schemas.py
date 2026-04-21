@@ -7,15 +7,19 @@ from PIL import Image
 class SimplifyTextRequest(BaseModel):
     text: str = Field(..., description="The text to be simplified.")
     custom_context: str | None = Field(
-        "custom_context", description="Optional custom context to aid in simplification."
+        None, description="Optional custom context to aid in simplification."
     )
     unalterable_terms_text: str | None = Field(
-        "unalterable_terms_text", description="Optional comma-separated terms that should not be altered during simplification."
+        None, description="Optional comma-separated terms that should not be altered during simplification."
+    )
+    target_language: str | None = Field(
+        None, description="Optional target language for translation (e.g., 'Swahili', 'French')."
     )
 
 class SimplifiedSentence(BaseModel):
     sentence: str
     image_prompt: str
+    translated_sentence: Optional[str] = None
 
 class SimplifiedText(BaseModel):
     title: str
@@ -30,6 +34,7 @@ class RevisedSentence(BaseModel):
     sentence: str
     image_prompt: str
     highlighted: bool
+    translated_sentence: Optional[str] = None
 
 class Revision(BaseModel):
     revised_sentences: List[RevisedSentence]
