@@ -86,3 +86,26 @@ class AIGenerateSentence(BaseModel):
 class AIGenerateRequest(BaseModel):
     request_id: str
     sentences: List[AIGenerateSentence]
+
+
+# TTS schemas
+class TTSSentence(BaseModel):
+    id: int
+    text: str
+
+
+class TTSSynthesizeRequest(BaseModel):
+    sentences: List[TTSSentence]
+    request_id: Optional[str] = None
+    voice: str = "af_heart"
+    speed: float = 1.0
+
+
+class TTSAudioFile(BaseModel):
+    id: int
+    filename: str
+
+
+class TTSSynthesizeResponse(BaseModel):
+    request_id: str
+    audio_files: List[TTSAudioFile]

@@ -1,14 +1,20 @@
+import io
+import os
 from logging import getLogger
+import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from schemas import (
     SimplifyTextRequest, SimplifiedTextResponse,
     GenerateIconRequest, GenerateIconsResponse,
     SymbolSearchRequest, SymbolSearchResponse,
     AIGenerateRequest,
+    TTSSynthesizeRequest, TTSSynthesizeResponse,
 )
 from controller import Controller
 from services.config import Config
+
+TTS_URL = os.getenv("TTS_URL", "http://tts.easyread:8001")
 
 logger = getLogger(__name__)
 
@@ -71,3 +77,53 @@ async def get_icons(request_id: str, image_id: str):
         media_type="image/png",
         filename=image_id
     )
+
+
+@api.post("/sentence/synthesize", tags=["Audio"])
+async def synthesize_audio(request: TTSSynthesizeRequest) -> TTSSynthesizeResponse:
+    """Proxy TTS synthesis request to the TTS service."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{TTS_URL}/synthesize",
+            json=request.model_dump(),
+            timeout=120,
+        )
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="TTS service error")
+        return TTSSynthesizeResponse(**response.json())
+
+
+@api.get("/audio/{request_id}/file/{filename}", tags=["Audio"])
+async def get_audio_file(request_id: str, filename: str):
+    """Proxy a single WAV audio file from the TTS service."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{TTS_URL}/audio/{request_id}/file/{filename}",
+            timeout=30,
+        )
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Audio file not found")
+        return StreamingResponse(
+            io.BytesIO(response.content),
+            media_type="audio/wav",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+
+@api.get("/audio/{request_id}/export", tags=["Audio"])
+async def export_audio_zip(request_id: str):
+    """Proxy ZIP export of all audio files from the TTS service."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{TTS_URL}/audio/{request_id}/export",
+            timeout=60,
+        )
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Audio not found")
+        return StreamingResponse(
+            io.BytesIO(response.content),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="easyread_audio.zip"'
+            },
+        )

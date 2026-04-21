@@ -1,10 +1,12 @@
 from services.gemini import GeminiDriver
+from services.bedrock import BedrockDriver
 from services.storage import StorageDriver
 from services.config import Config
 from services.icons import IconGenerator
 from services.global_symbols import GlobalSymbolsService
 import json
 import os
+import re
 from logging import getLogger
 from uuid import uuid4
 from pathlib import Path
@@ -12,10 +14,16 @@ from pathlib import Path
 logger = getLogger(__name__)
 
 
+def _strip_code_fences(text: str) -> str:
+    """Remove markdown code fences (```json ... ```) that LLMs sometimes add."""
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+    return match.group(1).strip() if match else text.strip()
+
+
 class Controller:
 
     def __init__(self):
-        self.gemini = GeminiDriver()
+        self.bedrock = BedrockDriver()
         self.storage = StorageDriver()
         self.config = Config()
         self.icon_generator = IconGenerator()
@@ -26,10 +34,10 @@ class Controller:
         template = self.config.simplify_text['system_message']
         prompt = f"{template}\n\n Bellow is the Input Text to simplify:\n\n{text}\n\n"
 
-        response = self.gemini.generate_text(prompt)
+        response = self.bedrock.generate_text(prompt)
 
         try:
-            response_data = json.loads(response)
+            response_data = json.loads(_strip_code_fences(response))
             logger.info(f"Successfully parsed response JSON: {response_data}")
         except json.JSONDecodeError:
             logger.error(f"Failed to parse response as JSON. Raw response: {response}")
@@ -39,10 +47,10 @@ class Controller:
     def validate_text(self, original_sentence: str, simplified_sentences: list[dict]) -> dict:
         template = self.config.validate_text['system_message']
         prompt = template + "\n" + self.config.validate_text["user_message_template"].format(original_markdown=original_sentence, simplified_sentences=json.dumps(simplified_sentences))
-        response = self.gemini.generate_text(prompt)
+        response = self.bedrock.generate_text(prompt)
 
         try:
-            response_data = json.loads(response)
+            response_data = json.loads(_strip_code_fences(response))
             logger.info(f"Successfully parsed response JSON: {response_data}")
         except json.JSONDecodeError:
             response_data = {"error": "Failed to parse response as JSON.", "raw_response": response}
@@ -52,10 +60,10 @@ class Controller:
     def revise_text(self, original_text: str, easy_read_sentences: list, feedback: str) -> dict:
         template = self.config.revise_text['system_message']
         prompt = template + "\n" + self.config.revise_text["user_message_template"].format(original_markdown=original_text, simplified_sentences=json.dumps(easy_read_sentences), validation_feedback=feedback)
-        response = self.gemini.generate_text(prompt)
+        response = self.bedrock.generate_text(prompt)
 
         try:
-            response_data = json.loads(response)
+            response_data = json.loads(_strip_code_fences(response))
             logger.info(f"Successfully parsed response JSON: {response_data}")
         except json.JSONDecodeError:
             response_data = {"error": "Failed to parse response as JSON.", "raw_response": response}

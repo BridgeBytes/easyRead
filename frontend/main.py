@@ -8,6 +8,7 @@ Converts complex text into Easy Read format with pictogram icons.
 import base64
 import logging
 import gradio as gr
+import requests
 import tempfile
 
 from utils.backend import BackendClient, RevisedSentence
@@ -33,6 +34,8 @@ state = {
     "request_id": "",
     "icons": [],
     "image_data": {},
+    "audio_request_id": "",
+    "audio_data": {},
 }
 
 
@@ -372,6 +375,76 @@ def export_markdown():
         return f.name
 
 
+def generate_audio_step():
+    """Synthesize all sentences to audio and render inline players."""
+    if not state["icons"]:
+        return (
+            gr.update(visible=True, value="No sentences available. Complete the document first."),
+            gr.update(visible=False),
+            gr.update(visible=False),
+        )
+
+    sentences = [icon.sentence for icon in state["icons"]]
+    try:
+        logger.info(f"Synthesizing audio for {len(sentences)} sentences")
+        response = client.synthesize_audio(sentences)
+        state["audio_request_id"] = response.request_id
+        state["audio_data"] = {}
+
+        for af in response.audio_files:
+            audio_bytes = client.fetch_audio(response.request_id, af.filename)
+            state["audio_data"][af.id] = audio_bytes
+
+        # Build audio players HTML
+        audio_html = '<div class="results-container"><h3>Audio Playback</h3>'
+        for idx, icon in enumerate(state["icons"]):
+            sentence_id = idx + 1
+            audio_bytes = state["audio_data"].get(sentence_id, b"")
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+            audio_src = f"data:audio/wav;base64,{audio_b64}"
+            audio_html += f"""
+            <div class="sentence-row">
+                <div class="text-col">
+                    <p>{icon.sentence}</p>
+                    <audio controls src="{audio_src}" style="width:100%;margin-top:6px;"></audio>
+                </div>
+            </div>
+            """
+        audio_html += "</div>"
+
+        return (
+            gr.update(visible=False),             # error
+            gr.update(visible=True, value=audio_html),  # audio_display
+            gr.update(visible=True),              # audio_export_row
+        )
+
+    except Exception as e:
+        logger.error(f"Error in generate_audio_step: {type(e).__name__}: {e}", exc_info=True)
+        return (
+            gr.update(visible=True, value="Failed to generate audio. Please try again."),
+            gr.update(visible=False),
+            gr.update(visible=False),
+        )
+
+
+def export_audio_zip():
+    """Download ZIP of all synthesized audio files."""
+    if not state.get("audio_request_id"):
+        return None
+
+    try:
+        audio_bytes = requests.get(
+            client.get_audio_export_url(state["audio_request_id"]),
+            timeout=60,
+        ).content
+        with tempfile.NamedTemporaryFile(suffix=".zip", prefix="easyread_audio_", delete=False) as f:
+            f.write(audio_bytes)
+            return f.name
+    except Exception as e:
+        logger.error(f"Error exporting audio ZIP: {e}")
+        return None
+
+
 def reset_app():
     """Reset the application state."""
     state.update({
@@ -381,6 +454,8 @@ def reset_app():
         "request_id": "",
         "icons": [],
         "image_data": {},
+        "audio_request_id": "",
+        "audio_data": {},
     })
     return (
         "",   # text input
@@ -629,6 +704,16 @@ with gr.Blocks(
             docx_download = gr.File(label="Word Document", visible=False)
             md_download = gr.File(label="Markdown File", visible=False)
 
+        gr.Markdown("---")
+        generate_audio_btn = gr.Button("Generate Audio", variant="primary")
+
+        audio_display = gr.HTML(visible=False)
+
+        with gr.Row(visible=False) as audio_export_row:
+            audio_export_btn = gr.Button("Export Audio (.zip)", variant="secondary")
+
+        audio_zip_download = gr.File(label="Audio ZIP", visible=False)
+
     # Event handlers
     simplify_btn.click(
         fn=lambda: gr.update(visible=True, value="Simplifying your text... This may take a moment."),
@@ -704,6 +789,27 @@ with gr.Blocks(
         outputs=[md_download],
     )
 
+    generate_audio_btn.click(
+        fn=lambda: gr.update(visible=True, value="Generating audio... This may take a moment."),
+        outputs=[loading_box],
+    ).then(
+        fn=generate_audio_step,
+        inputs=[],
+        outputs=[error_box, audio_display, audio_export_row],
+    ).then(
+        fn=lambda: gr.update(visible=False),
+        outputs=[loading_box],
+    )
+
+    audio_export_btn.click(
+        fn=export_audio_zip,
+        inputs=[],
+        outputs=[audio_zip_download],
+    ).then(
+        fn=lambda: gr.update(visible=True),
+        outputs=[audio_zip_download],
+    )
+
     reset_btn.click(
         fn=reset_app,
         inputs=[],
@@ -718,6 +824,7 @@ with gr.Blocks(
             results_section,
         ],
     )
+    # reset_app returns the same 8 outputs; audio state is cleared internally
 
 
 if __name__ == "__main__":

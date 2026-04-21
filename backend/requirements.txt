@@ -7,3 +7,5 @@ fastapi
 google-genai
 minio
 requests
+boto3
+httpx

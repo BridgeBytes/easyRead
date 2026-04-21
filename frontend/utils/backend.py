@@ -60,6 +60,18 @@ class SymbolSearchResponse:
     results: list[SymbolSearchResult]
 
 
+@dataclass
+class TTSAudioFile:
+    id: int
+    filename: str
+
+
+@dataclass
+class TTSResponse:
+    request_id: str
+    audio_files: list[TTSAudioFile]
+
+
 class BackendClient:
     """Client for communicating with the EasyRead backend API."""
 
@@ -256,6 +268,55 @@ class BackendClient:
             Full URL to fetch the icon image
         """
         return f"{self.base_url}/icons/{request_id}/{image_id}"
+
+    def synthesize_audio(
+        self,
+        sentences: list[str],
+        request_id: Optional[str] = None,
+        voice: str = "af_heart",
+        speed: float = 1.0,
+    ) -> TTSResponse:
+        """
+        Synthesize a list of sentence strings to WAV audio via the TTS service.
+
+        Returns:
+            TTSResponse with request_id and list of audio files (id + filename).
+        """
+        payload = {
+            "sentences": [{"id": i + 1, "text": text} for i, text in enumerate(sentences)],
+            "voice": voice,
+            "speed": speed,
+        }
+        if request_id:
+            payload["request_id"] = request_id
+
+        response = requests.post(
+            f"{self.base_url}/sentence/synthesize",
+            json=payload,
+            timeout=120,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return TTSResponse(
+            request_id=data["request_id"],
+            audio_files=[
+                TTSAudioFile(id=af["id"], filename=af["filename"])
+                for af in data["audio_files"]
+            ],
+        )
+
+    def fetch_audio(self, request_id: str, filename: str) -> bytes:
+        """Fetch a single WAV audio file from the TTS service."""
+        response = requests.get(
+            f"{self.base_url}/audio/{request_id}/file/{filename}",
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.content
+
+    def get_audio_export_url(self, request_id: str) -> str:
+        """Return the URL for downloading the ZIP of all audio files."""
+        return f"{self.base_url}/audio/{request_id}/export"
 
     def fetch_icon(self, request_id: str, image_id: str) -> bytes:
         """
